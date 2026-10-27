@@ -1,0 +1,19 @@
+# systemd unit for the web app. Install with:
+#   sudo cp deploy/league-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now league-bot
+[Unit]
+Description=League Bot web app
+After=network-online.target
+
+[Service]
+User=leaguebot
+WorkingDirectory=/opt/league-bot
+# ANTHROPIC_API_KEY lives here, readable only by the leaguebot user.
+EnvironmentFile=/opt/league-bot/.env
+# One worker on purpose: chat sessions live in that worker's memory. Threads handle
+# concurrent questions. Long timeout because one answer can take ~30-60s with tools.
+ExecStart=/opt/league-bot/.venv/bin/gunicorn --workers 1 --threads 8 --timeout 180 --bind 127.0.0.1:8000 app:app
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

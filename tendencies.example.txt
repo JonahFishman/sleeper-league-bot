@@ -1,0 +1,14 @@
+# Copy this file to tendencies.txt and write your own notes. tendencies.txt is gitignored.
+#
+# Free-form text. One section per manager, using their Sleeper display name so the
+# bot can match notes to the data. Write what you'd tell a friend before they
+# traded with this person. The bot uses these quietly and never reveals them.
+
+ExampleManager1:
+- Always overpays for rookies, especially RBs, in the months before the draft.
+- Won't trade with ExampleManager2.
+- Responds better to 2-for-1 offers than to picks.
+
+ExampleManager2:
+- Rebuilding this year; will sell vets over 27 for 1sts.
+- Slow to respond; offers sit for a week.

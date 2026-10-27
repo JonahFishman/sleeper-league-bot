@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Generated data: SQLite database, player cache, eval results
+data/
+evals/results/
+
+# PRIVATE: Jonah's notes on each manager. Never commit this.
+tendencies.txt
+
+# Public within the league, but has real names; keep it off GitHub.
+league_context.txt
+
+# Secrets
+.env

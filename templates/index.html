@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>League Bot</title>
+  <!-- Link preview when the URL is pasted into Snapchat / iMessage -->
+  <meta property="og:title" content="League Bot">
+  <meta property="og:description" content="Ask anything about the league: who won a trade, what it'd take to get a player, who trades the most.">
+  <meta property="og:type" content="website">
+  <meta name="description" content="Ask anything about the league: trades, rosters, values, history.">
+  <style>
+    :root {
+      --bg: #f6f5f2; --surface: #ffffff; --text: #1b1b1b; --muted: #6b6b6b;
+      --accent: #1f6f4a; --accent-text: #ffffff; --border: #e2e0da; --mine: #e7f2ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121413; --surface: #1c1f1d; --text: #ececec; --muted: #9a9a9a;
+        --accent: #3fa874; --accent-text: #0d1310; --border: #2c302d; --mine: #1f2c25;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column;
+    }
+    header { padding: 14px 16px 6px; max-width: 720px; width: 100%; margin: 0 auto; }
+    header h1 { font-size: 18px; margin: 0; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+    .linkish { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+    #thread { flex: 1; overflow-y: auto; padding: 8px 16px; max-width: 720px; width: 100%; margin: 0 auto; }
+    .msg { padding: 10px 14px; border-radius: 14px; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .me { background: var(--mine); margin-left: 15%; }
+    .bot { background: var(--surface); border: 1px solid var(--border); margin-right: 5%; }
+    .err { color: #c0392b; }
+    .copy { display: block; margin-top: 6px; font-size: 13px; color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chips button {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; text-align: left;
+    }
+    #picker h2 { font-size: 16px; margin: 8px 0 0; }
+    #picker p { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+    form {
+      display: flex; gap: 8px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+      max-width: 720px; width: 100%; margin: 0 auto;
+    }
+    textarea {
+      flex: 1; resize: none; font: inherit; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text); max-height: 140px;
+    }
+    form button {
+      background: var(--accent); color: var(--accent-text); border: 0; border-radius: 12px;
+      padding: 0 16px; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    form button:disabled { opacity: .5; cursor: default; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>League Bot</h1>
+    <p id="who">Ask anything about the league: trades, rosters, values, history.</p>
+  </header>
+
+  <main id="thread">
+    <section id="picker" hidden>
+      <h2>Which team are you?</h2>
+      <p>So I can answer from your roster. Only used for that and for counting who uses this.</p>
+      <div class="chips" id="teams"></div>
+    </section>
+    <div class="chips" id="examples" hidden>
+      <button>What's my team's biggest weakness?</button>
+      <button>Who'd buy my best player?</button>
+      <button>What's the most lopsided trade in league history?</button>
+      <button>Who's the most active trader?</button>
+    </div>
+  </main>
+
+  <form id="form">
+    <textarea id="q" rows="1" placeholder="Ask a question…" maxlength="1000" required></textarea>
+    <button id="send" type="submit">Ask</button>
+  </form>
+
+  <script>
+    // The server remembers the conversation for 30 minutes under this id.
+    let sessionId = null;
+    // Phones often reload a page left in the background (e.g. while pasting an answer into
+    // Snapchat), so keep this tab's conversation in sessionStorage for the same 30 minutes.
+    // Closing the tab still starts fresh.
+    const CONVO_TTL_MS = 30 * 60 * 1000;
+    let shown = [];  // [{text, cls}] for every bubble on screen
+    // The team this phone picked: a roster id, "none" for "rather not say", or null if not asked yet.
+    let team = load();
+    let teamLabels = {};
+
+    const thread = document.getElementById("thread");
+    const form = document.getElementById("form");
+    const input = document.getElementById("q");
+    const send = document.getElementById("send");
+    const picker = document.getElementById("picker");
+    const examples = document.getElementById("examples");
+    const who = document.getElementById("who");
+
+    // Storage can be blocked (private browsing), so never let it break the page.
+    function load() { try { return JSON.parse(localStorage.getItem("team")); } catch { return null; } }
+    function save(value) { try { localStorage.setItem("team", JSON.stringify(value)); } catch {} }
+
+    function saveConvo() {
+      try { sessionStorage.setItem("convo", JSON.stringify({ sessionId, shown, at: Date.now() })); } catch {}
+    }
+    function restoreConvo() {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem("convo"));
+        if (!saved || Date.now() - saved.at > CONVO_TTL_MS) return false;
+        sessionId = saved.sessionId;
+        for (const m of saved.shown) render(m.text, m.cls);
+        shown = saved.shown;
+        return shown.length > 0;
+      } catch { return false; }
+    }
+
+    function showWho() {
+      who.textContent = "";
+      if (team === null) return;
+      who.append(team === "none" ? "Asking anonymously · " : `Asking as ${teamLabels[team] || "your team"} · `);
+      const change = document.createElement("button");
+      change.className = "linkish";
+      change.textContent = "change";
+      change.onclick = () => { picker.hidden = false; examples.hidden = true; };
+      who.append(change);
+    }
+
+    async function setUpPicker() {
+      let teams;
+      try {
+        teams = (await (await fetch("/teams")).json()).teams;
+      } catch {
+        examples.hidden = false;  // can't load teams: skip the picker, the page still works
+        return;
+      }
+      const box = document.getElementById("teams");
+      for (const t of [...teams, { roster_id: "none", label: "Rather not say" }]) {
+        teamLabels[t.roster_id] = t.label;
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = t.label;
+        b.onclick = () => {
+          team = t.roster_id;
+          save(team);
+          sessionId = null;  // a new team means a new conversation
+          shown = [];
+          thread.querySelectorAll(".msg").forEach((m) => m.remove());
+          saveConvo();
+          picker.hidden = true;
+          if (!thread.querySelector(".msg")) examples.hidden = false;
+          showWho();
+        };
+        box.appendChild(b);
+      }
+      if (team === null) picker.hidden = false;
+      else if (!thread.querySelector(".msg")) examples.hidden = false;
+      showWho();
+    }
+
+    // Draw a bubble. Bot answers get a Copy button.
+    function render(text, cls) {
+      const div = document.createElement("div");
+      div.className = "msg " + cls;
+      div.textContent = text;  // textContent, never innerHTML: answers are shown as plain text
+      if (cls === "bot") addCopyButton(div, text);
+      thread.appendChild(div);
+      thread.scrollTop = thread.scrollHeight;
+      return div;
+    }
+
+    function addCopyButton(div, text) {
+      const b = document.createElement("button");
+      b.className = "linkish copy";
+      b.textContent = "Copy";
+      b.onclick = async () => {
+        try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
+        catch { b.textContent = "Couldn't copy, long-press the text instead"; }
+        setTimeout(() => (b.textContent = "Copy"), 2000);
+      };
+      div.appendChild(b);
+    }
+
+    async function ask(question) {
+      examples.hidden = true;
+      picker.hidden = true;
+      render(question, "me");
+      shown.push({ text: question, cls: "me" });
+      saveConvo();
+      const pending = render("Thinking…", "pending bot");
+      send.disabled = true;
+      try {
+        const res = await fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, session_id: sessionId, team: typeof team === "number" ? team : null }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          pending.textContent = data.error;
+          pending.classList.add("err");
+        } else {
+          sessionId = data.session_id;
+          // Answers may use **bold** markdown; strip the markers rather than render HTML.
+          const text = data.answer.replace(/\*\*(.+?)\*\*/g, "$1");
+          pending.textContent = text;
+          addCopyButton(pending, text);
+          shown.push({ text, cls: "bot" });
+          saveConvo();
+        }
+      } catch {
+        pending.textContent = "Couldn't reach the bot. Check your connection and try again.";
+        pending.classList.add("err");
+      } finally {
+        send.disabled = false;
+        thread.scrollTop = thread.scrollHeight;
+      }
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = input.value.trim();
+      if (!q || send.disabled) return;
+      input.value = "";
+      ask(q);
+    });
+    // Enter sends, Shift+Enter makes a new line.
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+    });
+    examples.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => ask(b.textContent)));
+    if (restoreConvo()) examples.hidden = true;
+    setUpPicker();
+  </script>
+</body>
+</html>

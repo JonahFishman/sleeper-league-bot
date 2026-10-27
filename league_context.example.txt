@@ -1,0 +1,12 @@
+# Copy to league_context.txt. Unlike tendencies.txt, the bot can quote anything here,
+# so only write what the whole league already knows.
+
+Nicknames (what people call each other in the group chat -> Sleeper name):
+- Alex -> mgr_alex
+- Ben -> mgr_ben
+
+Lore:
+- The 2023 final was decided by a Monday night kicker; still brought up constantly.
+
+League customs and rules Sleeper doesn't know about:
+- Last place has to do a punishment chosen by the champion.
